@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2026 강릉 가족 힐링 여행</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & Babel -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Noto Sans KR', sans-serif; background-color: #f8fafc; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .glass-card { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.3); }
+        .timeline-line { position: absolute; left: 60px; top: 0; bottom: 0; width: 2px; background: #e2e8f0; }
+        .mission-pulse { animation: pulse 2s infinite; }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+            70% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const INITIAL_TRIP_DATA = {
+            tripInfo: {
+                title: "2026 강릉 가족 힐링 여행",
+                dates: "2026.01.07 - 01.08",
+                stay: "신라 모노그램 강릉",
+                family: "아빠(커피), 엄마(토속음식), 6세 딸(동물/액티비티)"
+            },
+            itinerary: [
+                {
+                    day: 1, date: "1월 7일 (화)",
+                    schedule: [
+                        { id: "d1-lunch", time: "12:00", category: "meal", isFixed: true, selectedOptionIndex: 0, options: [{ title: "초당 순두부 마을", desc: "엄마는 얼큰 전골, 딸은 하얀 순두부", tags: ["토속적", "아이추천"], place: "초당동" }] },
+                        { id: "d1-snack", time: "13:30", category: "shopping", isFixed: true, mission: true, selectedOptionIndex: 0, options: [{ title: "강릉샌드 초당직영점", desc: "⚠️ 품절 방지! 미리 구매 권장", tags: ["미션필수", "선물"], place: "초당동" }] },
+                        { id: "d1-coffee", time: "14:00", category: "coffee", isFixed: false, selectedOptionIndex: 0, options: [
+                            { title: "보헤미안 박이추 커피", desc: "대한민국 1세대 명장의 핸드드립", tags: ["아빠추천", "장인전통"] },
+                            { title: "바우카페 (본점)", desc: "툇마루 어머니 운영, 흑임자라떼", tags: ["시그니처", "인기"] },
+                            { title: "카페 기와", desc: "고즈넉한 한옥 감성", tags: ["엄마추천", "한옥"] }
+                        ]},
+                        { id: "d1-checkin", time: "16:00", category: "stay", isFixed: true, selectedOptionIndex: 0, options: [{ title: "신라 모노그램 체크인", desc: "온수풀 수영 (3부 이용 추천)", tags: ["호텔", "수영"], place: "송정동" }] },
+                        { id: "d1-market", time: "18:30", category: "activity", isFixed: true, mission: true, selectedOptionIndex: 0, options: [{ title: "강릉 중앙시장", desc: "베니닭강정, 어묵고로케 필수", tags: ["시장구경", "미션필수"], place: "성남동" }] },
+                    ]
+                },
+                {
+                    day: 2, date: "1월 8일 (수)",
+                    schedule: [
+                        { id: "d2-activity", time: "10:00", category: "activity", isFixed: false, selectedOptionIndex: 0, options: [{ title: "자연아놀자", desc: "실내 생태체험, 동물 먹이주기", tags: ["아이최애", "실내"] }, { title: "경포 아쿠아리움", desc: "따뜻한 실내 관람", tags: ["실내", "교육"] }] },
+                        { id: "d2-lunch", time: "12:30", category: "meal", isFixed: false, selectedOptionIndex: 0, options: [{ title: "포남사골옹심이", desc: "안 매운 쫀득 옹심이", tags: ["토속적", "담백"] }, { title: "강릉 불고기", desc: "달콤 파불고기", tags: ["아이밥도둑", "로컬"] }] },
+                        { id: "d2-coffee", time: "14:30", category: "coffee", isFixed: false, selectedOptionIndex: 0, options: [{ title: "테라로사 본점", desc: "웅장한 커피 공장", tags: ["아빠필수", "웅장"] }, { title: "테라로사 경포호수", desc: "호수 뷰 북카페", tags: ["아이동반", "여유"] }] },
+                    ]
+                }
+            ]
+        };
+
+        function App() {
+            const [trip, setTrip] = useState(INITIAL_TRIP_DATA);
+            const [currentDay, setCurrentDay] = useState(0);
+            const [apiKey, setApiKey] = useState(localStorage.getItem('gemini_api_key') || "");
+            const [showSettings, setShowSettings] = useState(false);
+            const [showSummary, setShowSummary] = useState(false);
+            const [isChatOpen, setIsChatOpen] = useState(false);
+            const [chatMessages, setChatMessages] = useState([{ role: 'ai', text: '안녕하세요! 무엇을 도와드릴까요? 🤖' }]);
+            const [userInput, setUserInput] = useState("");
+            const [isTyping, setIsTyping] = useState(false);
+            const [aiTip, setAiTip] = useState({ show: false, content: "" });
+
+            useEffect(() => { lucide.createIcons(); }, [currentDay, trip]);
+
+            const saveApiKey = (key) => {
+                setApiKey(key);
+                localStorage.setItem('gemini_api_key', key);
+                setShowSettings(false);
+            };
+
+            const openNaver = (title) => {
+                window.open(`https://search.naver.com/search.naver?query=${encodeURIComponent(title)}`, '_blank');
+            };
+
+            const callGemini = async (prompt, system) => {
+                if (!apiKey) throw new Error("KEY_MISSING");
+                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }],
+                        systemInstruction: { parts: [{ text: system }] }
+                    })
+                });
+                const data = await res.json();
+                return data.candidates[0].content.parts[0].text;
+            };
+
+            const handleSend = async () => {
+                if (!userInput.trim()) return;
+                const txt = userInput;
+                setUserInput("");
+                setChatMessages(prev => [...prev, { role: 'user', text: txt }]);
+                setIsTyping(true);
+                try {
+                    const ans = await callGemini(txt, "강릉 여행 가이드");
+                    setChatMessages(prev => [...prev, { role: 'ai', text: ans }]);
+                } catch (e) {
+                    setChatMessages(prev => [...prev, { role: 'ai', text: "API 키를 설정해주세요." }]);
+                } finally { setIsTyping(false); }
+            };
+
+            return (
+                <div className="max-w-md mx-auto min-h-screen bg-slate-50 relative shadow-2xl overflow-x-hidden">
+                    {/* Header */}
+                    <header className="bg-blue-600 text-white p-6 rounded-b-[2.5rem] shadow-lg">
+                        <div className="flex justify-between items-center mb-4">
+                            <h1 className="text-xl font-bold">{trip.tripInfo.title}</h1>
+                            <button onClick={() => setShowSettings(true)} className="p-2 bg-white/20 rounded-full"><i data-lucide="settings" size="20"></i></button>
+                        </div>
+                        <div className="flex gap-2 overflow-x-auto no-scrollbar">
+                            <span className="text-[10px] bg-blue-500/50 px-3 py-1 rounded-full border border-blue-400">👨 아빠: 커피</span>
+                            <span className="text-[10px] bg-pink-500/50 px-3 py-1 rounded-full border border-pink-400">👩 엄마: 토속</span>
+                            <span className="text-[10px] bg-yellow-400 text-yellow-900 px-3 py-1 rounded-full font-bold">👧 딸: 동물</span>
+                        </div>
+                    </header>
+
+                    {/* Tabs */}
+                    <div className="flex p-4 gap-3 sticky top-0 bg-slate-50/90 backdrop-blur-md z-30">
+                        {[0, 1].map(idx => (
+                            <button key={idx} onClick={() => setCurrentDay(idx)} className={`flex-1 py-3 rounded-2xl font-bold text-sm shadow-sm transition-all ${currentDay === idx ? 'bg-blue-600 text-white scale-105' : 'bg-white text-gray-400'}`}>
+                                Day {idx + 1} ({trip.itinerary[idx].date.split('(')[1].replace(')', '')})
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Timeline */}
+                    <div className="px-6 pb-24 relative">
+                        <div className="timeline-line"></div>
+                        {trip.itinerary[currentDay].schedule.map((item) => {
+                            const selected = item.options[item.selectedOptionIndex];
+                            return (
+                                <div key={item.id} className="relative pl-20 pb-8">
+                                    <div className="absolute left-[53px] top-1 w-4 h-4 rounded-full border-4 border-blue-500 bg-white z-10"></div>
+                                    <span className="absolute left-0 top-0 text-xs font-bold text-gray-400 w-12 text-right pt-0.5">{item.time}</span>
+                                    
+                                    <div onClick={() => openNaver(selected.title)} className={`glass-card rounded-3xl p-5 shadow-sm active:scale-95 transition-transform ${item.mission ? 'mission-pulse border-red-200' : ''}`}>
+                                        <div className="flex justify-between items-start mb-2">
+                                            <h3 className="font-bold text-gray-800 flex items-center gap-1">
+                                                {selected.title} <i data-lucide="search" className="w-3 h-3 text-gray-300"></i>
+                                            </h3>
+                                        </div>
+                                        <p className="text-sm text-gray-600 mb-3">{selected.desc}</p>
+                                        <div className="flex flex-wrap gap-1 mb-4">
+                                            {selected.tags.map(tag => <span key={tag} className="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md">#{tag}</span>)}
+                                        </div>
+                                        <button onClick={(e) => { e.stopPropagation(); /* AI Tip Logic */ }} className="w-full py-2 bg-blue-50 text-blue-600 text-xs font-bold rounded-xl flex items-center justify-center gap-2">
+                                            <i data-lucide="sparkles" className="w-3 h-3"></i> AI 꿀팁 보기
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {/* Floating Buttons */}
+                    <div className="fixed bottom-6 right-6 flex flex-col gap-3 z-40">
+                        <button onClick={() => setShowSummary(true)} className="w-14 h-14 bg-gray-800 text-white rounded-full shadow-xl flex items-center justify-center"><i data-lucide="list-checks"></i></button>
+                        <button onClick={() => setIsChatOpen(true)} className="w-14 h-14 bg-blue-600 text-white rounded-full shadow-xl flex items-center justify-center relative"><i data-lucide="sparkles"></i></button>
+                    </div>
+
+                    {/* Settings Modal */}
+                    {showSettings && (
+                        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6">
+                            <div className="bg-white rounded-[2rem] p-8 w-full max-w-sm">
+                                <h2 className="text-xl font-bold mb-4">🔑 API 키 설정</h2>
+                                <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Gemini API 키를 입력하세요" className="w-full px-4 py-3 bg-slate-100 rounded-xl mb-4 text-sm outline-none focus:ring-2 focus:ring-blue-500" />
+                                <button onClick={() => saveApiKey(apiKey)} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold">저장하기</button>
+                                <button onClick={() => setShowSettings(false)} className="w-full py-3 mt-2 text-gray-400 text-sm">닫기</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Chat Modal (Simplified) */}
+                    {isChatOpen && (
+                        <div className="fixed inset-0 z-[110] bg-white flex flex-col">
+                            <div className="bg-blue-600 p-6 flex justify-between text-white">
+                                <span className="font-bold">AI 여행 비서</span>
+                                <button onClick={() => setIsChatOpen(false)}><i data-lucide="x"></i></button>
+                            </div>
+                            <div className="flex-1 p-6 space-y-4 overflow-y-auto bg-slate-50">
+                                {chatMessages.map((m, i) => (
+                                    <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                        <div className={`p-4 rounded-2xl text-sm ${m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-white shadow-sm text-gray-700'}`}>{m.text}</div>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="p-4 border-t flex gap-2">
+                                <input type="text" value={userInput} onChange={e => setUserInput(e.target.value)} placeholder="질문하세요..." className="flex-1 px-4 py-3 bg-slate-100 rounded-xl outline-none" />
+                                <button onClick={handleSend} className="p-3 bg-blue-600 text-white rounded-xl"><i data-lucide="send" className="w-5 h-5"></i></button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
