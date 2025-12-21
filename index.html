@@ -19,7 +19,11 @@
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         .glass-card { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.3); }
-        .timeline-line { position: absolute; left: 60px; top: 0; bottom: 0; width: 2px; background: #e2e8f0; }
+        
+        /* 타임라인 레이아웃: 점과 시간이 절대 겹치지 않도록 충분한 간격(80px) 확보 */
+        .timeline-line { position: absolute; left: 80px; top: 0; bottom: 0; width: 2px; background: #e2e8f0; }
+        .timeline-dot { position: absolute; left: 73px; top: 4px; width: 16px; height: 16px; border-radius: 9999px; border: 4px solid #3b82f6; background: white; z-index: 10; }
+        
         .mission-pulse { animation: pulse 2s infinite; }
         @keyframes pulse {
             0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
@@ -79,7 +83,12 @@
             const [isTyping, setIsTyping] = useState(false);
             const [aiTip, setAiTip] = useState({ show: false, content: "" });
 
-            useEffect(() => { lucide.createIcons(); }, [currentDay, trip]);
+            // 아이콘 리랜더링 보장
+            useEffect(() => {
+                if (window.lucide) {
+                    window.lucide.createIcons();
+                }
+            }, [currentDay, trip, showSettings, isChatOpen, aiTip]);
 
             const saveApiKey = (key) => {
                 setApiKey(key);
@@ -102,6 +111,7 @@
                     })
                 });
                 const data = await res.json();
+                if (data.error) throw new Error(data.error.message);
                 return data.candidates[0].content.parts[0].text;
             };
 
@@ -112,11 +122,22 @@
                 setChatMessages(prev => [...prev, { role: 'user', text: txt }]);
                 setIsTyping(true);
                 try {
-                    const ans = await callGemini(txt, "강릉 여행 가이드");
+                    const ans = await callGemini(txt, "당신은 강릉 여행 전문가입니다. 친절하고 간결하게 답변하세요.");
                     setChatMessages(prev => [...prev, { role: 'ai', text: ans }]);
                 } catch (e) {
-                    setChatMessages(prev => [...prev, { role: 'ai', text: "API 키를 설정해주세요." }]);
+                    setChatMessages(prev => [...prev, { role: 'ai', text: "API 키를 확인하거나 인터넷 연결을 확인해주세요." }]);
                 } finally { setIsTyping(false); }
+            };
+
+            const handleAiTip = async (e, title, desc) => {
+                e.stopPropagation();
+                setAiTip({ show: true, content: "AI가 꿀팁을 생각 중입니다..." });
+                try {
+                    const ans = await callGemini(`'${title}'(${desc}) 방문 시 6세 딸이 있는 가족을 위한 짧은 꿀팁 1개만 알려줘.`, "강릉 여행 가이드");
+                    setAiTip({ show: true, content: ans });
+                } catch (e) {
+                    setAiTip({ show: true, content: "설정에서 API 키를 먼저 등록해주세요!" });
+                }
             };
 
             return (
@@ -125,12 +146,14 @@
                     <header className="bg-blue-600 text-white p-6 rounded-b-[2.5rem] shadow-lg">
                         <div className="flex justify-between items-center mb-4">
                             <h1 className="text-xl font-bold">{trip.tripInfo.title}</h1>
-                            <button onClick={() => setShowSettings(true)} className="p-2 bg-white/20 rounded-full"><i data-lucide="settings" size="20"></i></button>
+                            <button onClick={() => setShowSettings(true)} className="p-2 bg-white/20 rounded-full hover:bg-white/30 transition-colors">
+                                <i data-lucide="settings" className="w-5 h-5"></i>
+                            </button>
                         </div>
                         <div className="flex gap-2 overflow-x-auto no-scrollbar">
-                            <span className="text-[10px] bg-blue-500/50 px-3 py-1 rounded-full border border-blue-400">👨 아빠: 커피</span>
-                            <span className="text-[10px] bg-pink-500/50 px-3 py-1 rounded-full border border-pink-400">👩 엄마: 토속</span>
-                            <span className="text-[10px] bg-yellow-400 text-yellow-900 px-3 py-1 rounded-full font-bold">👧 딸: 동물</span>
+                            <span className="text-[10px] bg-blue-500/50 px-3 py-1 rounded-full border border-blue-400 whitespace-nowrap">👨 아빠: 커피</span>
+                            <span className="text-[10px] bg-pink-500/50 px-3 py-1 rounded-full border border-pink-400 whitespace-nowrap">👩 엄마: 토속</span>
+                            <span className="text-[10px] bg-yellow-400 text-yellow-900 px-3 py-1 rounded-full font-bold whitespace-nowrap">👧 딸: 동물</span>
                         </div>
                     </header>
 
@@ -149,11 +172,11 @@
                         {trip.itinerary[currentDay].schedule.map((item) => {
                             const selected = item.options[item.selectedOptionIndex];
                             return (
-                                <div key={item.id} className="relative pl-20 pb-8">
-                                    <div className="absolute left-[53px] top-1 w-4 h-4 rounded-full border-4 border-blue-500 bg-white z-10"></div>
-                                    <span className="absolute left-0 top-0 text-xs font-bold text-gray-400 w-12 text-right pt-0.5">{item.time}</span>
+                                <div key={item.id} className="relative pl-24 pb-10"> {/* 패딩 증가 */}
+                                    <div className="timeline-dot"></div>
+                                    <span className="absolute left-0 top-1 text-xs font-bold text-gray-400 w-[70px] text-right pr-4">{item.time}</span>
                                     
-                                    <div onClick={() => openNaver(selected.title)} className={`glass-card rounded-3xl p-5 shadow-sm active:scale-95 transition-transform ${item.mission ? 'mission-pulse border-red-200' : ''}`}>
+                                    <div onClick={() => openNaver(selected.title)} className={`glass-card rounded-3xl p-5 shadow-sm active:scale-95 transition-transform cursor-pointer ${item.mission ? 'mission-pulse border-red-200' : ''}`}>
                                         <div className="flex justify-between items-start mb-2">
                                             <h3 className="font-bold text-gray-800 flex items-center gap-1">
                                                 {selected.title} <i data-lucide="search" className="w-3 h-3 text-gray-300"></i>
@@ -163,7 +186,10 @@
                                         <div className="flex flex-wrap gap-1 mb-4">
                                             {selected.tags.map(tag => <span key={tag} className="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md">#{tag}</span>)}
                                         </div>
-                                        <button onClick={(e) => { e.stopPropagation(); /* AI Tip Logic */ }} className="w-full py-2 bg-blue-50 text-blue-600 text-xs font-bold rounded-xl flex items-center justify-center gap-2">
+                                        <button 
+                                            onClick={(e) => handleAiTip(e, selected.title, selected.desc)} 
+                                            className="w-full py-2 bg-blue-50 text-blue-600 text-xs font-bold rounded-xl flex items-center justify-center gap-2 hover:bg-blue-100"
+                                        >
                                             <i data-lucide="sparkles" className="w-3 h-3"></i> AI 꿀팁 보기
                                         </button>
                                     </div>
@@ -174,39 +200,78 @@
 
                     {/* Floating Buttons */}
                     <div className="fixed bottom-6 right-6 flex flex-col gap-3 z-40">
-                        <button onClick={() => setShowSummary(true)} className="w-14 h-14 bg-gray-800 text-white rounded-full shadow-xl flex items-center justify-center"><i data-lucide="list-checks"></i></button>
-                        <button onClick={() => setIsChatOpen(true)} className="w-14 h-14 bg-blue-600 text-white rounded-full shadow-xl flex items-center justify-center relative"><i data-lucide="sparkles"></i></button>
+                        <button onClick={() => setShowSummary(true)} className="w-14 h-14 bg-gray-800 text-white rounded-full shadow-xl flex items-center justify-center hover:bg-gray-700 transition-all"><i data-lucide="list-checks"></i></button>
+                        <button onClick={() => setIsChatOpen(true)} className="w-14 h-14 bg-blue-600 text-white rounded-full shadow-xl flex items-center justify-center relative hover:bg-blue-700 transition-all"><i data-lucide="sparkles"></i></button>
                     </div>
+
+                    {/* AI Tip Popup */}
+                    {aiTip.show && (
+                        <div className="fixed inset-x-6 bottom-24 z-50 bg-gray-900/95 text-white p-5 rounded-3xl shadow-2xl animate-bounce-in">
+                            <div className="flex justify-between items-start mb-2">
+                                <span className="text-xs font-bold text-yellow-400 flex items-center gap-1"><i data-lucide="lightbulb" className="w-3 h-3"></i> AI 꿀팁</span>
+                                <button onClick={() => setAiTip({ show: false, content: "" })} className="text-gray-400 hover:text-white"><i data-lucide="x" className="w-4 h-4"></i></button>
+                            </div>
+                            <p className="text-sm leading-relaxed">{aiTip.content}</p>
+                        </div>
+                    )}
 
                     {/* Settings Modal */}
                     {showSettings && (
                         <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6">
                             <div className="bg-white rounded-[2rem] p-8 w-full max-w-sm">
-                                <h2 className="text-xl font-bold mb-4">🔑 API 키 설정</h2>
+                                <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><i data-lucide="key" className="text-blue-600"></i> API 키 설정</h2>
+                                <p className="text-xs text-gray-500 mb-4">개인 API 키를 등록하면 AI 기능을 사용할 수 있습니다.</p>
                                 <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Gemini API 키를 입력하세요" className="w-full px-4 py-3 bg-slate-100 rounded-xl mb-4 text-sm outline-none focus:ring-2 focus:ring-blue-500" />
-                                <button onClick={() => saveApiKey(apiKey)} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold">저장하기</button>
+                                <button onClick={() => saveApiKey(apiKey)} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg">저장하기</button>
                                 <button onClick={() => setShowSettings(false)} className="w-full py-3 mt-2 text-gray-400 text-sm">닫기</button>
                             </div>
                         </div>
                     )}
 
-                    {/* Chat Modal (Simplified) */}
+                    {/* Chat Modal */}
                     {isChatOpen && (
                         <div className="fixed inset-0 z-[110] bg-white flex flex-col">
-                            <div className="bg-blue-600 p-6 flex justify-between text-white">
-                                <span className="font-bold">AI 여행 비서</span>
-                                <button onClick={() => setIsChatOpen(false)}><i data-lucide="x"></i></button>
+                            <div className="bg-blue-600 p-6 flex justify-between items-center text-white">
+                                <div className="flex items-center gap-2">
+                                    <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center"><i data-lucide="sparkles"></i></div>
+                                    <span className="font-bold">AI 여행 비서</span>
+                                </div>
+                                <button onClick={() => setIsChatOpen(false)}><i data-lucide="x" className="w-6 h-6"></i></button>
                             </div>
                             <div className="flex-1 p-6 space-y-4 overflow-y-auto bg-slate-50">
                                 {chatMessages.map((m, i) => (
                                     <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                        <div className={`p-4 rounded-2xl text-sm ${m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-white shadow-sm text-gray-700'}`}>{m.text}</div>
+                                        <div className={`p-4 rounded-2xl text-sm leading-relaxed max-w-[85%] ${m.role === 'user' ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-white shadow-sm text-gray-700 rounded-tl-none border border-gray-100'}`}>{m.text}</div>
                                     </div>
                                 ))}
+                                {isTyping && <div className="text-xs text-gray-400 animate-pulse">AI가 답변을 준비하고 있습니다...</div>}
                             </div>
-                            <div className="p-4 border-t flex gap-2">
-                                <input type="text" value={userInput} onChange={e => setUserInput(e.target.value)} placeholder="질문하세요..." className="flex-1 px-4 py-3 bg-slate-100 rounded-xl outline-none" />
-                                <button onClick={handleSend} className="p-3 bg-blue-600 text-white rounded-xl"><i data-lucide="send" className="w-5 h-5"></i></button>
+                            <div className="p-4 border-t flex gap-2 bg-white">
+                                <input type="text" value={userInput} onChange={e => setUserInput(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleSend()} placeholder="궁금한 내용을 물어보세요..." className="flex-1 px-4 py-3 bg-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-blue-500" />
+                                <button onClick={handleSend} className="p-3 bg-blue-600 text-white rounded-xl shadow-md"><i data-lucide="send" className="w-5 h-5"></i></button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Summary Modal */}
+                    {showSummary && (
+                        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6">
+                            <div className="bg-white rounded-[2rem] p-8 w-full max-w-sm max-h-[80vh] overflow-y-auto shadow-2xl">
+                                <h2 className="text-xl font-bold mb-4 flex items-center gap-2 border-b pb-2"><i data-lucide="history" className="text-blue-600"></i> 일정 한눈에 보기</h2>
+                                {trip.itinerary.map(day => (
+                                    <div key={day.day} className="mb-6">
+                                        <h4 className="font-bold text-blue-600 mb-3">{day.date}</h4>
+                                        <div className="space-y-3">
+                                            {day.schedule.map(s => (
+                                                <div key={s.id} className="flex gap-4 text-sm items-center">
+                                                    <span className="text-gray-400 font-mono w-10 shrink-0 text-xs">{s.time}</span>
+                                                    <span className="text-gray-700 font-medium">{s.options[s.selectedOptionIndex].title}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                                <button onClick={() => setShowSummary(false)} className="w-full py-4 bg-gray-800 text-white rounded-2xl font-bold mt-4 shadow-lg">닫기</button>
                             </div>
                         </div>
                     )}
