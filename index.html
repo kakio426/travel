@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>2026 강릉 가족 여행 (AI Edition)</title>
+    <title>2026 강릉 가족 여행 (AI Pro + Manual)</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- React & Babel -->
@@ -23,21 +23,18 @@
         .timeline-line { position: absolute; left: 80px; top: 0; bottom: 0; width: 2px; background: #e2e8f0; }
         .timeline-dot { position: absolute; left: 73px; top: 4px; width: 16px; height: 16px; border-radius: 9999px; border: 4px solid #3b82f6; background: white; z-index: 10; }
         
+        /* 애니메이션 */
+        @keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .animate-slide-up { animation: slideUp 0.3s ease-out forwards; }
+        
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .animate-fade-in { animation: fadeIn 0.3s ease-out; }
+
         .mission-pulse { animation: pulse 2s infinite; }
         @keyframes pulse {
             0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
             70% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
             100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
-        }
-
-        .loading-shimmer {
-            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
-            background-size: 200% 100%;
-            animation: shimmer 1.5s infinite;
-        }
-        @keyframes shimmer {
-            0% { background-position: 200% 0; }
-            100% { background-position: -200% 0; }
         }
     </style>
 </head>
@@ -90,17 +87,20 @@
             const [isChatOpen, setIsChatOpen] = useState(false);
             
             // Chat Logic
-            const [chatMessages, setChatMessages] = useState([{ role: 'ai', text: '안녕하세요! 2026년 강릉 여행 가이드입니다. 일정 변경이나 추천이 필요하면 말씀해주세요! 🤖' }]);
+            const [chatMessages, setChatMessages] = useState([{ role: 'ai', text: '안녕하세요! 여행 비서입니다. "첫째 날 점심 다른 곳 추천해줘" 처럼 말해보세요! 🤖' }]);
             const [userInput, setUserInput] = useState("");
             const [isTyping, setIsTyping] = useState(false);
 
-            // Replacement Logic (Magic Wand)
+            // Replacement Logic (AI Magic Wand)
             const [isReplacing, setIsReplacing] = useState(false);
             const [replacementModal, setReplacementModal] = useState({ show: false, dayIndex: 0, scheduleId: null, alternatives: [] });
 
+            // Manual Edit Logic (Direct Input)
+            const [manualEditModal, setManualEditModal] = useState({ show: false, dayIndex: 0, scheduleId: null, title: "", desc: "" });
+
             useEffect(() => {
                 if (window.lucide) window.lucide.createIcons();
-            }, [currentDay, trip, showSettings, isChatOpen, replacementModal]);
+            }, [currentDay, trip, showSettings, isChatOpen, replacementModal, chatMessages, manualEditModal]);
 
             const saveApiKey = (key) => {
                 setApiKey(key);
@@ -112,7 +112,7 @@
             const callGemini = async (prompt, system) => {
                 if (!apiKey) {
                     setShowSettings(true);
-                    throw new Error("API 키를 먼저 설정해주세요.");
+                    throw new Error("설정(우측 상단 톱니바퀴)에서 API 키를 먼저 등록해주세요.");
                 }
                 
                 try {
@@ -121,21 +121,65 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             contents: [{ parts: [{ text: prompt }] }],
-                            systemInstruction: { parts: [{ text: system }] },
-                            generationConfig: { responseMimeType: "application/json" } // JSON 강제
+                            systemInstruction: { parts: [{ text: system }] }
                         })
                     });
                     
                     const data = await res.json();
                     if (data.error) throw new Error(data.error.message);
-                    return JSON.parse(data.candidates[0].content.parts[0].text);
+                    return data.candidates[0].content.parts[0].text;
                 } catch (e) {
                     console.error("Gemini API Error:", e);
                     throw e;
                 }
             };
 
-            // --- Feature 1: AI Recommend & Replace (Magic Wand) ---
+            // --- Common: Apply Changes ---
+            const applyReplacement = (dayIndex, scheduleId, newOption) => {
+                const newTrip = { ...trip };
+                const schedule = newTrip.itinerary[dayIndex].schedule;
+                const itemIndex = schedule.findIndex(s => s.id === scheduleId);
+                
+                if (itemIndex !== -1) {
+                    schedule[itemIndex].options.push(newOption);
+                    schedule[itemIndex].selectedOptionIndex = schedule[itemIndex].options.length - 1;
+                    
+                    setTrip(newTrip);
+                    
+                    // 채팅창에 알림 추가 (채팅창이 열려있다면)
+                    if (isChatOpen) {
+                        setChatMessages(prev => [...prev, { role: 'ai', text: `✅ 일정이 [${newOption.title}]로 변경되었습니다.` }]);
+                    }
+                }
+            };
+
+            // --- Feature 1: Manual Edit (Direct Input) ---
+            const openManualEdit = (dayIdx, item) => {
+                const currentOption = item.options[item.selectedOptionIndex];
+                setManualEditModal({
+                    show: true,
+                    dayIndex: dayIdx,
+                    scheduleId: item.id,
+                    title: currentOption.title, // 현재 값 미리 채워주기
+                    desc: currentOption.desc
+                });
+            };
+
+            const saveManualEdit = () => {
+                if (!manualEditModal.title.trim()) return;
+
+                const newOption = {
+                    title: manualEditModal.title,
+                    desc: manualEditModal.desc,
+                    tags: ["직접입력"] // 태그 고정
+                };
+
+                applyReplacement(manualEditModal.dayIndex, manualEditModal.scheduleId, newOption);
+                setManualEditModal({ ...manualEditModal, show: false });
+            };
+
+
+            // --- Feature 2: AI Recommendation ---
             const handleRecommend = async (dayIdx, scheduleItem) => {
                 setIsReplacing(true);
                 const currentPlace = scheduleItem.options[scheduleItem.selectedOptionIndex];
@@ -146,13 +190,17 @@
                     카테고리: ${scheduleItem.category}
                     가족 구성: ${trip.tripInfo.family}
                     
-                    요청: 위 장소를 대체할 수 있는, 강릉의 다른 훌륭한 장소 3곳을 추천해줘.
-                    조건:
-                    1. 현재 장소와 다른 곳이어야 함.
-                    2. 6세 아이와 함께하기 좋은 곳 포함.
-                    3. JSON 형식으로만 응답할 것.
+                    [요청 사항]
+                    위 장소를 대체할 수 있는, 강릉의 다른 훌륭한 장소 3곳을 추천해주세요.
                     
-                    Output Schema:
+                    [중요: 카테고리별 추천 가이드]
+                    - 식사: 맛집, 로컬 음식점
+                    - 카페: 뷰가 좋거나 커피가 맛있는 곳
+                    - 쇼핑: 강릉 샌드, 빵, 기념품, 시장 간식 등 '살 것' 위주
+                    - 관광/액티비티: 볼거리, 체험, 아이와 가기 좋은 곳
+                    
+                    [출력 형식]
+                    반드시 아래 포맷의 순수 JSON 배열만 출력하세요. 마크다운이나 다른 텍스트 금지.
                     [
                         { "title": "장소명", "desc": "한줄 설명", "tags": ["태그1", "태그2"] },
                         ...
@@ -160,7 +208,10 @@
                 `;
 
                 try {
-                    const alternatives = await callGemini(prompt, "You are a travel assistant. Output strict JSON array.");
+                    const responseText = await callGemini(prompt, "You are a travel assistant. Output strict JSON array only.");
+                    const jsonStr = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+                    const alternatives = JSON.parse(jsonStr);
+                    
                     setReplacementModal({
                         show: true,
                         dayIndex: dayIdx,
@@ -174,48 +225,18 @@
                 }
             };
 
-            const applyReplacement = (newOption) => {
-                const { dayIndex, scheduleId } = replacementModal;
-                const newTrip = { ...trip };
-                
-                // 해당 일정 찾기 및 업데이트
-                const schedule = newTrip.itinerary[dayIndex].schedule;
-                const itemIndex = schedule.findIndex(s => s.id === scheduleId);
-                
-                if (itemIndex !== -1) {
-                    // 기존 옵션 리스트에 새 옵션 추가하고 바로 선택
-                    schedule[itemIndex].options.push(newOption);
-                    schedule[itemIndex].selectedOptionIndex = schedule[itemIndex].options.length - 1;
-                    
-                    // 태그에 'AI추천' 자동 추가
-                    if (!newOption.tags.includes("AI추천")) {
-                        schedule[itemIndex].options[schedule[itemIndex].selectedOptionIndex].tags.unshift("AI추천");
-                    }
+            const applyAiReplacement = (dayIndex, scheduleId, newOption) => {
+                // AI 추천 태그 추가 후 공통 적용 함수 호출
+                const optionWithTag = { ...newOption };
+                if (!optionWithTag.tags.includes("AI추천")) {
+                    optionWithTag.tags = ["AI추천", ...optionWithTag.tags];
                 }
-
-                setTrip(newTrip);
-                setReplacementModal({ ...replacementModal, show: false });
-                
-                // 채팅창에 알림 추가
-                setChatMessages(prev => [...prev, { role: 'ai', text: `✅ [${newOption.title}]로 일정을 변경했습니다!` }]);
+                applyReplacement(dayIndex, scheduleId, optionWithTag);
+                setReplacementModal(prev => ({ ...prev, show: false }));
             };
 
-            // --- Feature 2: Chat & General Query ---
-            // 일반 텍스트 모드의 API 호출 (채팅용)
-            const callGeminiText = async (prompt, system) => {
-                if (!apiKey) return "API 키 설정을 먼저 해주세요!";
-                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: prompt }] }],
-                        systemInstruction: { parts: [{ text: system }] }
-                    })
-                });
-                const data = await res.json();
-                return data.candidates[0].content.parts[0].text;
-            };
 
+            // --- Feature 3: Chat with Interactive Action ---
             const handleSendChat = async () => {
                 if (!userInput.trim()) return;
                 const txt = userInput;
@@ -223,20 +244,30 @@
                 setChatMessages(prev => [...prev, { role: 'user', text: txt }]);
                 setIsTyping(true);
 
-                // 현재 일정 정보를 컨텍스트로 제공
-                const context = JSON.stringify(trip.itinerary);
+                const context = trip.itinerary.map((d, i) => 
+                    `Day ${i+1}(${d.date}): ` + d.schedule.map(s => `[ID:${s.id}] ${s.time} ${s.category}-${s.options[s.selectedOptionIndex].title}`).join(', ')
+                ).join('\n');
+
                 const systemPrompt = `
-                    당신은 강릉 여행 가이드입니다.
-                    현재 여행객의 일정 데이터는 다음과 같습니다: ${context}
+                    당신은 강릉 여행 가이드입니다. 
+                    현재 일정 데이터: ${context}
                     
-                    사용자의 질문에 친절하게 답하세요.
-                    만약 사용자가 "일정을 추천해줘" 혹은 "바꿔줘"라고 하면,
-                    "일정 카드의 [마술봉 아이콘]을 눌러보세요! 제가 딱 맞는 장소를 찾아드릴게요."라고 안내해주세요.
+                    사용자가 일정 변경/추천을 원하면 답변 뒤에 아래 JSON 블록을 붙이세요.
+                    @@@{"targetId": "변경할스케줄ID", "dayIndex": 0, "candidates": [{"title": "장소명", "desc": "설명", "tags": ["태그"]}]}@@@
                 `;
 
                 try {
-                    const ans = await callGeminiText(txt, systemPrompt);
-                    setChatMessages(prev => [...prev, { role: 'ai', text: ans }]);
+                    const ans = await callGemini(txt, systemPrompt);
+                    let displayText = ans;
+                    let commandData = null;
+                    const commandMatch = ans.match(/@@@(.*?)@@@/s);
+                    if (commandMatch) {
+                        try {
+                            commandData = JSON.parse(commandMatch[1]);
+                            displayText = ans.replace(commandMatch[0], "").trim();
+                        } catch (e) {}
+                    }
+                    setChatMessages(prev => [...prev, { role: 'ai', text: displayText, command: commandData }]);
                 } catch (e) {
                     setChatMessages(prev => [...prev, { role: 'ai', text: "오류가 발생했습니다." }]);
                 } finally {
@@ -285,31 +316,39 @@
                             const selected = item.options[item.selectedOptionIndex];
                             return (
                                 <div key={item.id} className="relative pl-24 pb-8 group">
-                                    {/* Timeline Dot & Time */}
                                     <div className="timeline-dot shadow-sm group-hover:scale-110 transition-transform"></div>
                                     <span className="absolute left-0 top-1 text-xs font-bold text-gray-500 w-[70px] text-right pr-4 font-mono">{item.time}</span>
                                     
-                                    {/* Card */}
                                     <div className={`glass-card rounded-3xl p-5 shadow-sm hover:shadow-md transition-all relative overflow-hidden ${item.mission ? 'border-l-4 border-l-red-400' : ''}`}>
                                         
-                                        {/* Badge */}
+                                        {/* Actions Header */}
                                         <div className="flex justify-between items-start mb-2">
                                             <span className={`text-[10px] font-bold px-2 py-1 rounded-md mb-2 inline-block
                                                 ${item.category === '식사' ? 'bg-orange-100 text-orange-600' : 
                                                   item.category === '카페' ? 'bg-brown-100 text-stone-600' : 
-                                                  item.category === '숙소' ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}`}>
+                                                  item.category === '쇼핑' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}`}>
                                                 {item.category}
                                             </span>
                                             
-                                            {/* AI Magic Wand Button */}
-                                            <button 
-                                                onClick={() => handleRecommend(currentDay, item)}
-                                                disabled={isReplacing}
-                                                className="p-2 bg-indigo-50 text-indigo-600 rounded-full hover:bg-indigo-100 active:scale-95 transition-all"
-                                                title="AI로 다른 장소 추천받기"
-                                            >
-                                                {isReplacing ? <i data-lucide="loader-2" className="w-4 h-4 animate-spin"></i> : <i data-lucide="wand-2" className="w-4 h-4"></i>}
-                                            </button>
+                                            <div className="flex gap-1">
+                                                <button 
+                                                    onClick={() => openManualEdit(currentDay, item)}
+                                                    className="p-1.5 bg-gray-100 text-gray-600 rounded-full hover:bg-gray-200 active:scale-95 transition-all flex items-center gap-1 border border-gray-200"
+                                                    title="직접 수정하기"
+                                                >
+                                                    <i data-lucide="pencil" className="w-3.5 h-3.5"></i>
+                                                    <span className="text-[10px] font-bold">수정</span>
+                                                </button>
+                                                <button 
+                                                    onClick={() => handleRecommend(currentDay, item)}
+                                                    disabled={isReplacing}
+                                                    className="p-1.5 bg-indigo-50 text-indigo-600 rounded-full hover:bg-indigo-100 active:scale-95 transition-all flex items-center gap-1 border border-indigo-100"
+                                                    title="AI 추천받기"
+                                                >
+                                                    {isReplacing ? <i data-lucide="loader-2" className="w-3.5 h-3.5 animate-spin"></i> : <i data-lucide="wand-2" className="w-3.5 h-3.5"></i>}
+                                                    <span className="text-[10px] font-bold">AI추천</span>
+                                                </button>
+                                            </div>
                                         </div>
 
                                         <h3 className="font-bold text-gray-800 text-lg mb-1">{selected.title}</h3>
@@ -317,7 +356,7 @@
                                         
                                         <div className="flex flex-wrap gap-1">
                                             {selected.tags.map((tag, i) => (
-                                                <span key={i} className={`text-[10px] px-2 py-0.5 rounded-md ${tag === 'AI추천' ? 'bg-indigo-100 text-indigo-600 font-bold' : 'bg-slate-100 text-slate-500'}`}>
+                                                <span key={i} className={`text-[10px] px-2 py-0.5 rounded-md ${tag === 'AI추천' ? 'bg-indigo-100 text-indigo-600 font-bold' : tag === '직접입력' ? 'bg-gray-200 text-gray-600 font-bold' : 'bg-slate-100 text-slate-500'}`}>
                                                     #{tag}
                                                 </span>
                                             ))}
@@ -328,9 +367,49 @@
                         })}
                     </div>
 
-                    {/* Replacement Modal (The "Change Place" UI) */}
+                    {/* Manual Edit Modal */}
+                    {manualEditModal.show && (
+                        <div className="fixed inset-0 z-[140] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-fade-in">
+                            <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-slide-up">
+                                <h2 className="text-lg font-bold mb-4 flex items-center gap-2 text-gray-800">
+                                    <i data-lucide="pencil" className="w-5 h-5 text-gray-500"></i> 장소 직접 수정
+                                </h2>
+                                
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="text-xs font-bold text-gray-500 block mb-1">장소 이름</label>
+                                        <input 
+                                            type="text" 
+                                            value={manualEditModal.title} 
+                                            onChange={e => setManualEditModal({...manualEditModal, title: e.target.value})}
+                                            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
+                                            placeholder="예: 동화가든"
+                                            autoFocus
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-gray-500 block mb-1">설명 (메모)</label>
+                                        <input 
+                                            type="text" 
+                                            value={manualEditModal.desc} 
+                                            onChange={e => setManualEditModal({...manualEditModal, desc: e.target.value})}
+                                            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                                            placeholder="예: 짬뽕순두부 웨이팅 필수!"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-2 mt-6">
+                                    <button onClick={saveManualEdit} className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold text-sm shadow-md active:scale-95 transition-all">변경 저장</button>
+                                    <button onClick={() => setManualEditModal({...manualEditModal, show: false})} className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-bold text-sm hover:bg-gray-200">취소</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* AI Replacement Modal */}
                     {replacementModal.show && (
-                        <div className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4">
+                        <div className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4 animate-fade-in">
                             <div className="bg-white rounded-t-[2rem] sm:rounded-[2rem] w-full max-w-sm max-h-[85vh] overflow-hidden flex flex-col shadow-2xl animate-slide-up">
                                 <div className="p-6 border-b bg-gradient-to-r from-indigo-50 to-white">
                                     <div className="flex justify-between items-center mb-1">
@@ -341,11 +420,11 @@
                                             <i data-lucide="x" className="w-5 h-5 text-gray-400"></i>
                                         </button>
                                     </div>
-                                    <p className="text-xs text-gray-500">6세 아이와 가족 취향을 고려해 새로 찾았어요!</p>
+                                    <p className="text-xs text-gray-500">카테고리와 가족 취향에 딱 맞는 곳을 찾았어요!</p>
                                 </div>
                                 <div className="p-6 overflow-y-auto space-y-4 bg-slate-50">
                                     {replacementModal.alternatives.map((alt, idx) => (
-                                        <div key={idx} onClick={() => applyReplacement(alt)} 
+                                        <div key={idx} onClick={() => applyAiReplacement(replacementModal.dayIndex, replacementModal.scheduleId, alt)} 
                                             className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm hover:border-indigo-500 hover:ring-1 hover:ring-indigo-500 cursor-pointer transition-all active:scale-95 group">
                                             <div className="flex justify-between items-start mb-2">
                                                 <h4 className="font-bold text-gray-800 group-hover:text-indigo-600">{alt.title}</h4>
@@ -365,41 +444,62 @@
                     {/* Chat Modal */}
                     {isChatOpen && (
                         <div className="fixed inset-0 z-[110] bg-white flex flex-col">
-                            <div className="bg-slate-900 p-4 flex justify-between items-center text-white">
+                            <div className="bg-slate-900 p-4 flex justify-between items-center text-white shadow-md">
                                 <div className="flex items-center gap-2">
                                     <div className="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center"><i data-lucide="bot"></i></div>
                                     <span className="font-bold">여행 비서</span>
                                 </div>
                                 <button onClick={() => setIsChatOpen(false)}><i data-lucide="chevron-down" className="w-6 h-6"></i></button>
                             </div>
+                            
                             <div className="flex-1 p-4 space-y-4 overflow-y-auto bg-slate-100 pb-20">
                                 {chatMessages.map((m, i) => (
-                                    <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                        <div className={`p-3 rounded-2xl text-sm leading-relaxed max-w-[80%] shadow-sm ${m.role === 'user' ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white text-gray-800 rounded-tl-none'}`}>
+                                    <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
+                                        <div className={`p-3 rounded-2xl text-sm leading-relaxed max-w-[85%] shadow-sm whitespace-pre-wrap 
+                                            ${m.role === 'user' ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white text-gray-800 rounded-tl-none border border-gray-200'}`}>
                                             {m.text}
                                         </div>
+                                        {m.command && m.command.candidates && (
+                                            <div className="mt-2 ml-2 space-y-2 max-w-[85%] animate-slide-up">
+                                                {m.command.candidates.map((cand, idx) => (
+                                                    <div key={idx} className="bg-indigo-50 p-3 rounded-xl border border-indigo-100 flex items-center justify-between gap-3 shadow-sm">
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="font-bold text-indigo-900 text-sm truncate">{cand.title}</div>
+                                                            <div className="text-xs text-indigo-700 truncate">{cand.desc}</div>
+                                                        </div>
+                                                        <button 
+                                                            onClick={() => applyAiReplacement(m.command.dayIndex, m.command.targetId, cand)}
+                                                            className="px-3 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-700 active:scale-95 transition-all shrink-0"
+                                                        >
+                                                            변경
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
                                 ))}
                                 {isTyping && <div className="flex justify-start"><div className="bg-white p-3 rounded-2xl rounded-tl-none text-xs text-gray-400 shadow-sm flex items-center gap-1">생각 중<span className="animate-bounce">.</span><span className="animate-bounce delay-100">.</span><span className="animate-bounce delay-200">.</span></div></div>}
                             </div>
+
                             <div className="p-3 border-t bg-white absolute bottom-0 w-full max-w-md">
                                 <div className="flex gap-2">
                                     <input type="text" value={userInput} onChange={e => setUserInput(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleSendChat()} 
-                                        placeholder="질문을 입력하세요..." className="flex-1 px-4 py-3 bg-gray-100 rounded-full text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+                                        placeholder="질문 또는 '점심 추천해줘'" className="flex-1 px-4 py-3 bg-gray-100 rounded-full text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
                                     <button onClick={handleSendChat} className="p-3 bg-indigo-600 text-white rounded-full shadow-md active:scale-95 transition-transform"><i data-lucide="send" className="w-5 h-5"></i></button>
                                 </div>
                             </div>
                         </div>
                     )}
 
-                    {/* Floating Action Buttons */}
+                    {/* Floating Buttons */}
                     <div className="fixed bottom-6 right-6 flex flex-col gap-3 z-40">
                          <button onClick={() => setShowSummary(true)} className="w-12 h-12 bg-white text-gray-700 rounded-full shadow-lg flex items-center justify-center hover:bg-gray-50 border border-gray-200">
                             <i data-lucide="list"></i>
                         </button>
-                        <button onClick={() => setIsChatOpen(true)} className="w-14 h-14 bg-slate-900 text-white rounded-full shadow-xl flex items-center justify-center hover:scale-105 transition-transform">
-                            <i data-lucide="message-circle" className="w-6 h-6"></i>
-                            <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></div>
+                        <button onClick={() => setIsChatOpen(true)} className="w-14 h-14 bg-slate-900 text-white rounded-full shadow-xl flex items-center justify-center hover:scale-105 transition-transform group">
+                            <i data-lucide="message-circle" className="w-6 h-6 group-hover:rotate-12 transition-transform"></i>
+                            <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-pulse"></div>
                         </button>
                     </div>
 
@@ -429,8 +529,8 @@
                                         <ul className="space-y-2">
                                             {day.schedule.map(s => (
                                                 <li key={s.id} className="text-xs flex gap-2">
-                                                    <span className="text-gray-400 font-mono w-10">{s.time}</span>
-                                                    <span>{s.options[s.selectedOptionIndex].title}</span>
+                                                    <span className="text-gray-400 font-mono w-10 shrink-0">{s.time}</span>
+                                                    <span className="font-medium">{s.options[s.selectedOptionIndex].title}</span>
                                                 </li>
                                             ))}
                                         </ul>
